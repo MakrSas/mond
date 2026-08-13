@@ -224,6 +224,7 @@ enum AppleIntelligenceDiagnostics {
         session.append("=== Apple Intelligence diagnostic / preparation ===")
         session.append("Device identifier: \(device)")
         session.append("iOS version: \(versionText)")
+        session.append("OS build: \(operatingSystemBuild())")
         session.append("Exploit method: \(UserDefaults.standard.string(forKey: "method") ?? "bad_query")")
         session.append("Application log directory: \(AppleIntelligenceLogStore.appDirectoryURL.path)")
 
@@ -523,6 +524,7 @@ enum AppleIntelligenceDiagnostics {
                 session.append("Device identifier: \(machineName())")
                 let version = ProcessInfo.processInfo.operatingSystemVersion
                 session.append("iOS version: \(version.majorVersion).\(version.minorVersion).\(version.patchVersion)")
+                session.append("OS build: \(operatingSystemBuild())")
                 session.append("No MobileGestalt write, preference write, or respring was requested.")
                 let check = recordRuntimeProbe(session: session)
                 result = finish(session: session, checks: [check], summary: check.status == .passed
@@ -550,6 +552,8 @@ enum AppleIntelligenceDiagnostics {
             do {
                 let session = try AppleIntelligenceLogSession()
                 session.append("=== Apply SiriAvailability after respring ===")
+                session.append("Device identifier: \(machineName())")
+                session.append("OS build: \(operatingSystemBuild())")
                 session.append("This is a controlled preference write; no respring is requested.")
                 guard let cString = apple_intelligence_apply_siri_availability() else {
                     session.append("[FAIL] SiriAvailability setter returned no data.")
@@ -626,19 +630,33 @@ enum AppleIntelligenceDiagnostics {
             .first { $0.hasPrefix("availability.live.systemCaps=") }
         let liveAvailabilityHasSAE = liveAvailabilityLine?.contains("missing=0x0") == true
         let externalServiceDisabled = runtime.contains("external.AF.service.SAE=0")
+        let asyncSAETransportError = runtime.contains("external.AF.async.SAE.sent=1 callback=1 timeout=0 value=0 errorPresent=1")
+        let asyncSAEAuthoritativeFalse = runtime.contains("external.AF.async.SAE.sent=1 callback=1 timeout=0 value=0 errorPresent=0")
+        let asyncSAECompleted = runtime.contains("external.AF.async.SAE.sent=1 callback=1 timeout=0")
         if externalServiceDisabled {
             session.append("[WARN] The external Siri capability service still reports SAE disabled; local SiriAvailability is not enough to enable Writing Tools.")
+        }
+        if asyncSAETransportError {
+            session.append("[INFO] The async external SAE probe completed with a transport error; its false value is not authoritative.")
+        } else if asyncSAEAuthoritativeFalse {
+            session.append("[WARN] The async external SAE probe completed without transport error and returned false; this is an authoritative downstream denial.")
+        } else if !asyncSAECompleted {
+            session.append("[WARN] The async external SAE probe did not complete cleanly; downstream service state is unknown.")
         }
         if let liveAvailabilityLine, !liveAvailabilityHasSAE {
             session.append("[WARN] Live AFSiriAvailability still reports missing SAE capability bits: \(liveAvailabilityLine)")
         }
+        let localRuntimePass = saeEnabled && availabilityHasSAE && liveAvailabilityHasSAE
+        let downstreamPass = !asyncSAEAuthoritativeFalse
         return AppleIntelligenceDiagnosticCheck(
             title: "Siri generation gate",
-            status: saeEnabled && availabilityHasSAE && liveAvailabilityHasSAE ? .passed : .warning,
-            detail: saeEnabled && availabilityHasSAE && liveAvailabilityHasSAE
-                ? (externalServiceDisabled
-                    ? "The local Siri runtime reports SAE enabled, but the external Siri capability service still reports SAE disabled."
-                    : "The local Siri runtime reports SAE enabled.")
+            status: localRuntimePass && downstreamPass ? .passed : .warning,
+            detail: localRuntimePass
+                ? (asyncSAETransportError
+                    ? "Local SAE is enabled; the external probe reached a transport error, so its false result is not authoritative."
+                    : asyncSAEAuthoritativeFalse
+                        ? "Local SAE is enabled, but the external capability service authoritatively denied SAE."
+                        : "Local SAE is enabled; downstream service response was not a clean positive response.")
                 : liveAvailabilityLine.map { "Live AFSiriAvailability reports missing capability bits: \($0)" }
                     ?? "UI/assets may be present, but the live Siri availability object or local SAE capability is still unavailable."
         )
@@ -721,6 +739,22 @@ enum AppleIntelligenceDiagnostics {
         return Mirror(reflecting: sysInfo.machine).children.reduce("") { identifier, element in
             guard let value = element.value as? Int8, value != 0 else { return identifier }
             return identifier + String(UnicodeScalar(UInt8(value)))
+        }
+    }
+
+    private static func operatingSystemBuild() -> String {
+        var size = 0
+        guard sysctlbyname("kern.osversion", nil, &size, nil, 0) == 0, size > 0 else {
+            return "unknown"
+        }
+        var buffer = [CChar](repeating: 0, count: size)
+        return buffer.withUnsafeMutableBufferPointer { bufferPointer in
+            var outputSize = bufferPointer.count
+            guard sysctlbyname("kern.osversion", bufferPointer.baseAddress, &outputSize, nil, 0) == 0,
+                  let baseAddress = bufferPointer.baseAddress else {
+                return "unknown"
+            }
+            return String(cString: baseAddress)
         }
     }
 }
