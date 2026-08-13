@@ -6,6 +6,8 @@
 import SwiftUI
 
 struct AppleIntelligenceView: View {
+    @EnvironmentObject private var state: AppState
+
     @State private var isRunning = false
     @State private var result: AppleIntelligenceDiagnosticResult?
     @State private var latestLogURL: URL?
@@ -32,7 +34,7 @@ struct AppleIntelligenceView: View {
             } header: {
                 Label("One-click flow", systemImage: "wand.and.stars")
             } footer: {
-                Text("The flow checks access, MobileGestalt, Siri feature flags and GREYMATTER eligibility, creates backups, applies the supported spoof payload, verifies the result and saves the log in Documents. A reboot and the model download still require system interaction.")
+                Text("The flow checks access, MobileGestalt, Siri feature flags and GREYMATTER eligibility, creates backups, applies the supported spoof payload, verifies the result, saves the log in Documents and resprings SpringBoard. The model download still requires system interaction.")
             }
 
             if let result {
@@ -88,6 +90,18 @@ struct AppleIntelligenceView: View {
             }
 
             Section {
+                Button {
+                    state.respring()
+                } label: {
+                    Label("Respring now", systemImage: "arrow.clockwise")
+                }
+            } header: {
+                Label("Apply changes", systemImage: "arrow.triangle.2.circlepath")
+            } footer: {
+                Text("The one-click flow starts this automatically after a successful MobileGestalt write. Use this button if SpringBoard did not refresh.")
+            }
+
+            Section {
                 Text("On a base iPhone 15, this can make the eligibility and download flow visible, but Apple officially supports Apple Intelligence only on iPhone 15 Pro models and iPhone 16 or later. Full on-device features may still be blocked by hardware or server attestation.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -109,6 +123,17 @@ struct AppleIntelligenceView: View {
             latestLogURL = newResult.logURL
             logText = (try? String(contentsOf: newResult.logURL, encoding: .utf8)) ?? ""
             isRunning = false
+
+            let gestaltWasApplied = newResult.checks.contains {
+                $0.title == "MobileGestalt preparation" && $0.status == .passed
+            }
+            if gestaltWasApplied {
+                // Let the result and the final log writes reach the UI before the
+                // existing WebKit-based respring mechanism takes over.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                    state.respring()
+                }
+            }
         }
     }
 

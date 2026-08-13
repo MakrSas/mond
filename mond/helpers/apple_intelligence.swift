@@ -372,7 +372,7 @@ enum AppleIntelligenceDiagnostics {
         }
 
         session.append("=== Preparation complete ===")
-        session.append("A reboot is required before Settings can re-read these values.")
+        session.append("A respring is required before SpringBoard and Settings can re-read these values.")
         session.append("After the model download, do not apply the original MobileGestalt backup over the AI-enabled file.")
 
         let hasFailure = checks.contains { $0.status == .failed }
@@ -381,9 +381,9 @@ enum AppleIntelligenceDiagnostics {
         if hasFailure {
             summary = "Подготовка завершилась с ошибкой. Откройте лог и отправьте его вместе с версией iOS и моделью устройства."
         } else if hasWarning {
-            summary = "Подготовка завершена с предупреждениями. Перезагрузите устройство и проверьте Apple Intelligence в Settings."
+            summary = "Подготовка завершена с предупреждениями. Выполните respring и проверьте Apple Intelligence в Settings."
         } else {
-            summary = "Подготовка завершена. Перезагрузите устройство; затем Apple Intelligence должен повторно проверить eligibility."
+            summary = "Подготовка завершена. Сейчас будет выполнен respring; затем Apple Intelligence должен повторно проверить eligibility."
         }
 
         return finish(session: session, checks: checks, summary: summary)
