@@ -47,6 +47,18 @@ struct ContentView: View {
                         Text("PosterBoard is still in development and may not work as expected.")
                     }
                 }
+
+                Section {
+                    NavigationLink {
+                        AppleIntelligenceView()
+                    } label: {
+                        Label("Apple Intelligence", systemImage: "sparkles")
+                    }
+                } header: {
+                    Label("Diagnostics", systemImage: "stethoscope")
+                } footer: {
+                    Text("Use the one-click flow to prepare Apple Intelligence spoofing and export a complete diagnostic log.")
+                }
             }
             .navigationTitle("mond")
             .tint(Color("AccentColor"))

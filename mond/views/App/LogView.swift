@@ -24,6 +24,10 @@ struct LogView: View {
                         .id(0)
                 }
                 .onAppear {
+                    if let saved = try? String(contentsOf: AppLogStore.url, encoding: .utf8) {
+                        log = saved
+                    }
+
                     pipe.fileHandleForReading.readabilityHandler = { fh in
                         let data = fh.availableData
 
@@ -41,6 +45,8 @@ struct LogView: View {
                             log.append(text)
                             proxy.scrollTo(0)
                         }
+
+                        AppLogStore.append(text)
                     }
                 }
                 .contextMenu {

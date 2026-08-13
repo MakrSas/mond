@@ -175,7 +175,7 @@ struct GestaltView: View {
                     PlainToggle(
                         text: "Apple Intelligence",
                         infoType: .info,
-                        infoMessage: "How to use this tweak:\n1. Spoof to the model next to the first one supported by Apple Intelligence.\n2. Spoof back to your model.\n3. Spoof to your final model and you should see the Apple Intelligence icon in Settings.\n4. Connect iPhone to power and leave the Settings > Storage tab open for ~1 hour.\n\nNOTE: Do not spoof back.",
+                        infoMessage: "Recommended: open the Apple Intelligence item in the main menu and run its one-click diagnostic flow. It applies the MobileGestalt flag, ProductType, Siri feature flags and GREYMATTER eligibility together, then verifies and saves a log. A reboot is still required before Settings can re-read the values.",
                         minSupportedVersion: 18.1,
                         isOn: mg_apple_intelligence_binding()
                     )
@@ -526,7 +526,7 @@ struct GestaltView: View {
     
                     Alertinator.shared.alert(
                         title: "Apple Intelligence Spoof",
-                        body: "How to use this tweak:\n1. Spoof to the model next to the first one supported by Apple Intelligence.\n2. Spoof back to your model.\n3. Spoof to your final model and you should see the Apple Intelligence icon in Settings.\n4. Connect iPhone to power and leave the Settings > Storage tab open for ~1 hour.\n\nNOTE: Do not spoof back."
+                        body: "Recommended: open the Apple Intelligence item in the main menu and run its one-click diagnostic flow. It applies and verifies all known local eligibility gates, creates backups and saves a log. A reboot and model download are still required."
                     )
                 } else {
                     cache_extra.removeObject(forKey: key)

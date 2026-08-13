@@ -56,6 +56,10 @@ enum AppPaths {
 enum TweakPaths {
     static var gestalt = "/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist"
     static var gestalt_dir = "/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/"
+    static var feature_flags = "/private/var/preferences/FeatureFlags/Global.plist"
+    static var feature_flags_dir = "/private/var/preferences/FeatureFlags/"
+    static var eligibility = "/private/var/db/eligibilityd/eligibility.plist"
+    static var eligibility_dir = "/private/var/db/eligibilityd/"
 }
 
 // respring.swift: easy respring on all iOS versions (probably).
