@@ -91,6 +91,27 @@ struct AppleIntelligenceView: View {
 
             Section {
                 Button {
+                    captureRuntime()
+                } label: {
+                    HStack {
+                        if isRunning {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "waveform.path.ecg")
+                        }
+                        Text("Capture current runtime state")
+                    }
+                }
+                .disabled(isRunning)
+            } header: {
+                Label("After respring", systemImage: "scope")
+            } footer: {
+                Text("Read-only: does not rewrite MobileGestalt and does not respring. Use it after Writing Tools or Image Playground fails, then export the saved log.")
+            }
+
+            Section {
+                Button {
                     state.respring()
                 } label: {
                     Label("Respring now", systemImage: "arrow.clockwise")
@@ -143,6 +164,16 @@ struct AppleIntelligenceView: View {
         guard let url = AppleIntelligenceLogStore.latestLogURL() else { return }
         latestLogURL = url
         logText = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+    }
+
+    private func captureRuntime() {
+        isRunning = true
+        AppleIntelligenceDiagnostics.captureRuntime { newResult in
+            result = newResult
+            latestLogURL = newResult.logURL
+            logText = (try? String(contentsOf: newResult.logURL, encoding: .utf8)) ?? ""
+            isRunning = false
+        }
     }
 
     private func icon(for status: AppleIntelligenceDiagnosticStatus) -> String {

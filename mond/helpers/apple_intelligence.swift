@@ -455,32 +455,7 @@ enum AppleIntelligenceDiagnostics {
             ))
         }
 
-        // This is intentionally read-only. It records the state consumed by
-        // the Siri runtime instead of treating visible UI or a 7 GB download
-        // as proof that generation is enabled.
-        if let cString = apple_intelligence_runtime_probe() {
-            let runtime = String(cString: cString)
-            free(cString)
-            for line in runtime.split(separator: "\n") {
-                session.append("[RUNTIME] \(line)")
-            }
-            let saeEnabled = runtime.contains("runtime.SAE=1")
-            let availabilityHasSAE = runtime.contains("availability.saeCapabilities=55") || runtime.contains("availability.saeCapabilities=0x37")
-            checks.append(AppleIntelligenceDiagnosticCheck(
-                title: "Siri generation gate",
-                status: saeEnabled && availabilityHasSAE ? .passed : .warning,
-                detail: saeEnabled && availabilityHasSAE
-                    ? "The local Siri runtime reports SAE enabled."
-                    : "UI/assets may be present, but the local Siri runtime still reports the SAE gate or capability word as disabled."
-            ))
-        } else {
-            session.append("[WARN] Siri runtime probe returned no data.")
-            checks.append(AppleIntelligenceDiagnosticCheck(
-                title: "Siri generation gate",
-                status: .warning,
-                detail: "The read-only AssistantServices probe returned no data."
-            ))
-        }
+        checks.append(recordRuntimeProbe(session: session))
 
         let regionLooksCompatible = regionCode == "US" && regionInfo == "LL/A"
         session.append(regionLooksCompatible ? "[OK] Region fields already look compatible." : "[WARN] Region fields are \(regionCode)/\(regionInfo); set device/Siri language and region to English (US) before testing.")
@@ -512,6 +487,65 @@ enum AppleIntelligenceDiagnostics {
         }
 
         return finish(session: session, checks: checks, summary: summary)
+    }
+
+    static func captureRuntime(completion: @escaping (AppleIntelligenceDiagnosticResult) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result: AppleIntelligenceDiagnosticResult
+            do {
+                let session = try AppleIntelligenceLogSession()
+                session.append("=== Apple Intelligence post-respring runtime snapshot ===")
+                session.append("Device identifier: \(machineName())")
+                let version = ProcessInfo.processInfo.operatingSystemVersion
+                session.append("iOS version: \(version.majorVersion).\(version.minorVersion).\(version.patchVersion)")
+                session.append("No MobileGestalt write, preference write, or respring was requested.")
+                let check = recordRuntimeProbe(session: session)
+                result = finish(session: session, checks: [check], summary: check.status == .passed
+                    ? "Текущий Siri runtime сообщает, что SAE включён."
+                    : "Снимок сохранён: downstream Siri generation gate всё ещё требует проверки.")
+            } catch {
+                let fallbackURL = AppleIntelligenceLogStore.directoryURL
+                    .appendingPathComponent("runtime-failed-\(UUID().uuidString).log")
+                try? FileManager.default.createDirectory(at: AppleIntelligenceLogStore.directoryURL, withIntermediateDirectories: true)
+                let message = "Unable to create runtime snapshot: \(error.localizedDescription)\n"
+                try? message.data(using: .utf8)?.write(to: fallbackURL)
+                result = AppleIntelligenceDiagnosticResult(
+                    logURL: fallbackURL,
+                    checks: [AppleIntelligenceDiagnosticCheck(title: "Log storage", status: .failed, detail: error.localizedDescription)],
+                    summary: "Не удалось сохранить runtime snapshot."
+                )
+            }
+            DispatchQueue.main.async { completion(result) }
+        }
+    }
+
+    private static func recordRuntimeProbe(session: AppleIntelligenceLogSession) -> AppleIntelligenceDiagnosticCheck {
+        // This is intentionally read-only. It records the state consumed by
+        // the Siri runtime instead of treating visible UI or a 7 GB download
+        // as proof that generation is enabled.
+        guard let cString = apple_intelligence_runtime_probe() else {
+            session.append("[WARN] Siri runtime probe returned no data.")
+            return AppleIntelligenceDiagnosticCheck(
+                title: "Siri generation gate",
+                status: .warning,
+                detail: "The read-only AssistantServices probe returned no data."
+            )
+        }
+
+        let runtime = String(cString: cString)
+        free(cString)
+        for line in runtime.split(separator: "\n") {
+            session.append("[RUNTIME] \(line)")
+        }
+        let saeEnabled = runtime.contains("runtime.SAE=1")
+        let availabilityHasSAE = runtime.contains("availability.saeCapabilities=55") || runtime.contains("availability.saeCapabilities=0x37")
+        return AppleIntelligenceDiagnosticCheck(
+            title: "Siri generation gate",
+            status: saeEnabled && availabilityHasSAE ? .passed : .warning,
+            detail: saeEnabled && availabilityHasSAE
+                ? "The local Siri runtime reports SAE enabled."
+                : "UI/assets may be present, but the local Siri runtime still reports the SAE gate or capability word as disabled."
+        )
     }
 
     private static func finish(
