@@ -7,6 +7,9 @@
 
 import Foundation
 import Darwin
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 enum AppleIntelligenceDiagnosticStatus: String {
     case passed = "OK"
@@ -586,15 +589,47 @@ enum AppleIntelligenceDiagnostics {
         for line in runtime.split(separator: "\n") {
             session.append("[RUNTIME] \(line)")
         }
+        recordFoundationModelAvailability(session: session)
         let saeEnabled = runtime.contains("runtime.SAE=1")
         let availabilityHasSAE = runtime.contains("availability.saeCapabilities=55") || runtime.contains("availability.saeCapabilities=0x37")
+        let externalServiceDisabled = runtime.contains("external.AF.service.SAE=0")
+        if externalServiceDisabled {
+            session.append("[WARN] The external Siri capability service still reports SAE disabled; local SiriAvailability is not enough to enable Writing Tools.")
+        }
         return AppleIntelligenceDiagnosticCheck(
             title: "Siri generation gate",
             status: saeEnabled && availabilityHasSAE ? .passed : .warning,
             detail: saeEnabled && availabilityHasSAE
-                ? "The local Siri runtime reports SAE enabled."
+                ? (externalServiceDisabled
+                    ? "The local Siri runtime reports SAE enabled, but the external Siri capability service still reports SAE disabled."
+                    : "The local Siri runtime reports SAE enabled.")
                 : "UI/assets may be present, but the local Siri runtime still reports the SAE gate or capability word as disabled."
         )
+    }
+
+    private static func recordFoundationModelAvailability(session: AppleIntelligenceLogSession) {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            let availability = SystemLanguageModel.default.availability
+            let description = String(describing: availability)
+            session.append("[MODEL] FoundationModels availability: \(description)")
+            if description.contains("available") && !description.contains("unavailable") {
+                session.append("[OK] FoundationModels reports the on-device model available.")
+            } else if description.contains("modelNotReady") {
+                session.append("[WARN] FoundationModels reports modelNotReady; storage usage alone does not prove activation is complete.")
+            } else if description.contains("deviceNotEligible") {
+                session.append("[FAIL] FoundationModels reports deviceNotEligible; this is a downstream hardware/policy gate.")
+            } else if description.contains("appleIntelligenceNotEnabled") {
+                session.append("[WARN] FoundationModels reports Apple Intelligence disabled.")
+            } else {
+                session.append("[WARN] FoundationModels reports an unavailable state: \(description).")
+            }
+        } else {
+            session.append("[MODEL] FoundationModels requires iOS 26 or later.")
+        }
+#else
+        session.append("[MODEL] FoundationModels framework is not present in this SDK; model availability was not queried.")
+#endif
     }
 
     private static func finish(
