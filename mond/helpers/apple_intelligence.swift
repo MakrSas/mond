@@ -34,8 +34,7 @@ final class AppleIntelligenceLogSession {
     private var contents = ""
 
     init() throws {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let directory = documents.appendingPathComponent("AppleIntelligenceDiagnostics", isDirectory: true)
+        let directory = AppleIntelligenceLogStore.directoryURL
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let stamp = ISO8601DateFormatter().string(from: Date())
@@ -56,8 +55,15 @@ final class AppleIntelligenceLogSession {
                 defer { try? handle.close() }
                 try? handle.seekToEnd()
                 try? handle.write(contentsOf: data)
+                handle.synchronizeFile()
             }
         }
+    }
+
+    func synchronize() {
+        guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? handle.close() }
+        handle.synchronizeFile()
     }
 
     func text() -> String {
@@ -68,18 +74,30 @@ final class AppleIntelligenceLogSession {
 }
 
 enum AppleIntelligenceLogStore {
+    static var appDirectoryURL: URL {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let directory = documents.appendingPathComponent("mond", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
     static var directoryURL: URL {
+        appDirectoryURL
+            .appendingPathComponent("AppleIntelligenceDiagnostics", isDirectory: true)
+    }
+
+    private static var legacyDirectoryURL: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("AppleIntelligenceDiagnostics", isDirectory: true)
     }
 
     static func latestLogURL() -> URL? {
-        guard let urls = try? FileManager.default.contentsOfDirectory(
-            at: directoryURL,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return nil
+        let urls = [directoryURL, legacyDirectoryURL].flatMap { directory in
+            (try? FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
         }
 
         return urls
@@ -91,19 +109,29 @@ enum AppleIntelligenceLogStore {
             }
             .first
     }
+
+    static func synchronize(_ url: URL) {
+        guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? handle.close() }
+        handle.synchronizeFile()
+    }
 }
 
 enum AppLogStore {
     private static let queue = DispatchQueue(label: "com.roooot.mond.log-store")
 
     static var url: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        AppleIntelligenceLogStore.appDirectoryURL
             .appendingPathComponent("mond.log")
     }
 
     static func append(_ text: String) {
         queue.async {
             guard let data = text.data(using: .utf8) else { return }
+            try? FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             if !FileManager.default.fileExists(atPath: url.path) {
                 FileManager.default.createFile(atPath: url.path, contents: nil)
             }
@@ -112,6 +140,11 @@ enum AppLogStore {
             try? handle.seekToEnd()
             try? handle.write(contentsOf: data)
         }
+    }
+
+    static func flush() {
+        queue.sync { }
+        AppleIntelligenceLogStore.synchronize(url)
     }
 }
 
@@ -162,6 +195,7 @@ enum AppleIntelligenceDiagnostics {
         session.append("Device identifier: \(device)")
         session.append("iOS version: \(versionText)")
         session.append("Exploit method: \(UserDefaults.standard.string(forKey: "method") ?? "bad_query")")
+        session.append("Application log directory: \(AppleIntelligenceLogStore.appDirectoryURL.path)")
 
         let supportedVersion = version.majorVersion == 27 && version.minorVersion == 0
         checks.append(AppleIntelligenceDiagnosticCheck(
@@ -396,6 +430,7 @@ enum AppleIntelligenceDiagnostics {
     ) -> AppleIntelligenceDiagnosticResult {
         session.append("Summary: \(summary)")
         session.append("Log file: \(session.url.path)")
+        session.synchronize()
         return AppleIntelligenceDiagnosticResult(logURL: session.url, checks: checks, summary: summary)
     }
 

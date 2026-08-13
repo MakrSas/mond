@@ -34,7 +34,7 @@ struct AppleIntelligenceView: View {
             } header: {
                 Label("One-click flow", systemImage: "wand.and.stars")
             } footer: {
-                Text("The flow checks access, MobileGestalt, Siri feature flags and GREYMATTER eligibility, creates backups, applies the supported spoof payload, verifies the result, saves the log in Documents and resprings SpringBoard. The model download still requires system interaction.")
+                Text("The flow checks access, MobileGestalt, Siri feature flags and GREYMATTER eligibility, creates backups, applies the supported spoof payload, verifies the result, saves the logs in Documents/mond and resprings SpringBoard. The model download still requires system interaction.")
             }
 
             if let result {
@@ -74,7 +74,7 @@ struct AppleIntelligenceView: View {
                 Label("Diagnostic log", systemImage: "doc.text.magnifyingglass")
             } footer: {
                 if let latestLogURL {
-                    Text("Saved as \(latestLogURL.lastPathComponent) in the app's Documents/AppleIntelligenceDiagnostics folder.")
+                    Text("Saved as \(latestLogURL.lastPathComponent) in the app's Documents/mond/AppleIntelligenceDiagnostics folder.")
                         .textSelection(.enabled)
                 }
             }
@@ -131,6 +131,8 @@ struct AppleIntelligenceView: View {
                 // Let the result and the final log writes reach the UI before the
                 // existing WebKit-based respring mechanism takes over.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                    AppleIntelligenceLogStore.synchronize(newResult.logURL)
+                    AppLogStore.flush()
                     state.respring()
                 }
             }
