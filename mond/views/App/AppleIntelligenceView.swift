@@ -112,6 +112,27 @@ struct AppleIntelligenceView: View {
 
             Section {
                 Button {
+                    applySiriAvailability()
+                } label: {
+                    HStack {
+                        if isRunning {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "lock.open.rotation")
+                        }
+                        Text("Apply local SAE availability")
+                    }
+                }
+                .disabled(isRunning)
+            } header: {
+                Label("Experimental runtime gate", systemImage: "flask")
+            } footer: {
+                Text("Run this after respring. It backs up SiriAvailability, applies the verified 0x37/0x1f SAE dictionary, verifies readback and does not respring. The system daemon may still recompute its own state.")
+            }
+
+            Section {
+                Button {
                     state.respring()
                 } label: {
                     Label("Respring now", systemImage: "arrow.clockwise")
@@ -169,6 +190,16 @@ struct AppleIntelligenceView: View {
     private func captureRuntime() {
         isRunning = true
         AppleIntelligenceDiagnostics.captureRuntime { newResult in
+            result = newResult
+            latestLogURL = newResult.logURL
+            logText = (try? String(contentsOf: newResult.logURL, encoding: .utf8)) ?? ""
+            isRunning = false
+        }
+    }
+
+    private func applySiriAvailability() {
+        isRunning = true
+        AppleIntelligenceDiagnostics.applySiriAvailability { newResult in
             result = newResult
             latestLogURL = newResult.logURL
             logText = (try? String(contentsOf: newResult.logURL, encoding: .utf8)) ?? ""

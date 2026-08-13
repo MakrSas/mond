@@ -519,6 +519,55 @@ enum AppleIntelligenceDiagnostics {
         }
     }
 
+    static func applySiriAvailability(completion: @escaping (AppleIntelligenceDiagnosticResult) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result: AppleIntelligenceDiagnosticResult
+            do {
+                let session = try AppleIntelligenceLogSession()
+                session.append("=== Apply SiriAvailability after respring ===")
+                session.append("This is a controlled preference write; no respring is requested.")
+                guard let cString = apple_intelligence_apply_siri_availability() else {
+                    session.append("[FAIL] SiriAvailability setter returned no data.")
+                    let check = AppleIntelligenceDiagnosticCheck(title: "SiriAvailability write", status: .failed, detail: "The setter returned no data.")
+                    result = finish(session: session, checks: [check], summary: "Не удалось применить SiriAvailability.")
+                    DispatchQueue.main.async { completion(result) }
+                    return
+                }
+                let writeResult = String(cString: cString)
+                free(cString)
+                for line in writeResult.split(separator: "\n") {
+                    session.append("[WRITE] \(line)")
+                }
+                let readbackOK = writeResult.contains("readbackEqual=1")
+                let writeCheck = AppleIntelligenceDiagnosticCheck(
+                    title: "SiriAvailability write",
+                    status: readbackOK ? .passed : .warning,
+                    detail: readbackOK ? "The patched capability dictionary was read back unchanged." : "The write did not verify with readbackEqual=1."
+                )
+                let runtimeCheck = recordRuntimeProbe(session: session)
+                result = finish(
+                    session: session,
+                    checks: [writeCheck, runtimeCheck],
+                    summary: readbackOK
+                        ? "SiriAvailability применён. Сразу проверьте Writing Tools/Image Playground, затем сохраните runtime snapshot."
+                        : "SiriAvailability не прошёл readback-проверку."
+                )
+            } catch {
+                let fallbackURL = AppleIntelligenceLogStore.directoryURL
+                    .appendingPathComponent("siri-availability-failed-\(UUID().uuidString).log")
+                try? FileManager.default.createDirectory(at: AppleIntelligenceLogStore.directoryURL, withIntermediateDirectories: true)
+                let message = "Unable to apply SiriAvailability: \(error.localizedDescription)\n"
+                try? message.data(using: .utf8)?.write(to: fallbackURL)
+                result = AppleIntelligenceDiagnosticResult(
+                    logURL: fallbackURL,
+                    checks: [AppleIntelligenceDiagnosticCheck(title: "SiriAvailability write", status: .failed, detail: error.localizedDescription)],
+                    summary: "Не удалось применить SiriAvailability."
+                )
+            }
+            DispatchQueue.main.async { completion(result) }
+        }
+    }
+
     private static func recordRuntimeProbe(session: AppleIntelligenceLogSession) -> AppleIntelligenceDiagnosticCheck {
         // This is intentionally read-only. It records the state consumed by
         // the Siri runtime instead of treating visible UI or a 7 GB download
