@@ -621,18 +621,26 @@ enum AppleIntelligenceDiagnostics {
         recordFoundationModelAvailability(session: session)
         let saeEnabled = runtime.contains("runtime.SAE=1")
         let availabilityHasSAE = runtime.contains("availability.saeCapabilities=55") || runtime.contains("availability.saeCapabilities=0x37")
+        let liveAvailabilityLine = runtime
+            .split(separator: "\n")
+            .first { $0.hasPrefix("availability.live.systemCaps=") }
+        let liveAvailabilityHasSAE = liveAvailabilityLine?.contains("missing=0x0") == true
         let externalServiceDisabled = runtime.contains("external.AF.service.SAE=0")
         if externalServiceDisabled {
             session.append("[WARN] The external Siri capability service still reports SAE disabled; local SiriAvailability is not enough to enable Writing Tools.")
         }
+        if let liveAvailabilityLine, !liveAvailabilityHasSAE {
+            session.append("[WARN] Live AFSiriAvailability still reports missing SAE capability bits: \(liveAvailabilityLine)")
+        }
         return AppleIntelligenceDiagnosticCheck(
             title: "Siri generation gate",
-            status: saeEnabled && availabilityHasSAE ? .passed : .warning,
-            detail: saeEnabled && availabilityHasSAE
+            status: saeEnabled && availabilityHasSAE && liveAvailabilityHasSAE ? .passed : .warning,
+            detail: saeEnabled && availabilityHasSAE && liveAvailabilityHasSAE
                 ? (externalServiceDisabled
                     ? "The local Siri runtime reports SAE enabled, but the external Siri capability service still reports SAE disabled."
                     : "The local Siri runtime reports SAE enabled.")
-                : "UI/assets may be present, but the local Siri runtime still reports the SAE gate or capability word as disabled."
+                : liveAvailabilityLine.map { "Live AFSiriAvailability reports missing capability bits: \($0)" }
+                    ?? "UI/assets may be present, but the live Siri availability object or local SAE capability is still unavailable."
         )
     }
 
