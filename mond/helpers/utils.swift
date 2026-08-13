@@ -60,6 +60,13 @@ enum TweakPaths {
     static var feature_flags_dir = "/private/var/preferences/FeatureFlags/"
     static var eligibility = "/private/var/db/eligibilityd/eligibility.plist"
     static var eligibility_dir = "/private/var/db/eligibilityd/"
+
+    static var eligibility_candidates: [(file: String, directory: String)] {
+        [
+            (eligibility, eligibility_dir),
+            ("/private/var/db/os_eligibility/eligibility.plist", "/private/var/db/os_eligibility/")
+        ]
+    }
 }
 
 // respring.swift: easy respring on all iOS versions (probably).

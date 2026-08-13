@@ -217,18 +217,27 @@ enum AppleIntelligenceDiagnostics {
         let featureFlagsHandle = grant_access(
             TweakPaths.feature_flags_dir,
             probe_leaf: "Global.plist",
-            msg: "granted FeatureFlags access"
+            msg: "granted FeatureFlags access",
+            allow_missing: true
         )
         let featureFlagsAccess = featureFlagsHandle >= 0
-        session.append(featureFlagsAccess ? "[OK] FeatureFlags access granted (handle \(featureFlagsHandle))." : "[WARN] FeatureFlags access unavailable (handle \(featureFlagsHandle)).")
+        session.append(featureFlagsAccess ? "[OK] FeatureFlags access granted (handle \(featureFlagsHandle), create-if-missing)." : "[WARN] FeatureFlags access unavailable (handle \(featureFlagsHandle)).")
 
-        let eligibilityHandle = grant_access(
-            TweakPaths.eligibility_dir,
-            probe_leaf: "eligibility.plist",
-            msg: "granted eligibility access"
-        )
-        let eligibilityAccess = eligibilityHandle >= 0
-        session.append(eligibilityAccess ? "[OK] eligibilityd access granted (handle \(eligibilityHandle))." : "[WARN] eligibilityd access unavailable (handle \(eligibilityHandle)).")
+        var eligibilityTarget: (file: String, directory: String)?
+        for candidate in TweakPaths.eligibility_candidates {
+            let handle = grant_access(
+                candidate.directory,
+                probe_leaf: "eligibility.plist",
+                msg: "granted eligibility access for \(candidate.file)",
+                allow_missing: true
+            )
+            if handle >= 0 {
+                eligibilityTarget = candidate
+                session.append("[OK] eligibility access granted for \(candidate.file) (handle \(handle), create-if-missing).")
+                break
+            }
+            session.append("[WARN] eligibility path unavailable: \(candidate.file) (handle \(handle)).")
+        }
 
         guard mgAccess else {
             checks.append(AppleIntelligenceDiagnosticCheck(
@@ -307,6 +316,10 @@ enum AppleIntelligenceDiagnostics {
         if featureFlagsAccess {
             let flagsURL = URL(fileURLWithPath: TweakPaths.feature_flags)
             do {
+                try FileManager.default.createDirectory(
+                    at: flagsURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
                 try backupIfNeeded(source: flagsURL, destination: AppPaths.backupsURLForAppleIntelligenceFeatureFlags)
                 var flags = (try? NSMutableDictionary(contentsOf: flagsURL, error: ())) ?? NSMutableDictionary()
                 let siri = mutableDictionary(flags["Siri"])
@@ -342,15 +355,16 @@ enum AppleIntelligenceDiagnostics {
             ))
         }
 
-        if eligibilityAccess {
-            let eligibilityURL = URL(fileURLWithPath: TweakPaths.eligibility)
+        if let eligibilityTarget {
+            let eligibilityURL = URL(fileURLWithPath: eligibilityTarget.file)
             do {
-                guard FileManager.default.fileExists(atPath: eligibilityURL.path) else {
-                    throw AppleIntelligenceDiagnosticError.fileMissing(eligibilityURL.path)
-                }
-
+                try FileManager.default.createDirectory(
+                    at: eligibilityURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
                 try backupIfNeeded(source: eligibilityURL, destination: AppPaths.backupsURLForAppleIntelligenceEligibility)
-                let eligibility = try NSMutableDictionary(contentsOf: eligibilityURL, error: ())
+                let eligibility = (try? NSMutableDictionary(contentsOf: eligibilityURL, error: ())) ?? NSMutableDictionary()
+                session.append(FileManager.default.fileExists(atPath: eligibilityURL.path) ? "[INFO] Existing eligibility plist loaded." : "[INFO] Eligibility plist is missing; creating a new payload.")
                 let greyMatter = mutableDictionary(eligibility["OS_ELIGIBILITY_DOMAIN_GREYMATTER"])
                 let context = mutableDictionary(greyMatter["context"])
                 context["OS_ELIGIBILITY_CONTEXT_ELIGIBLE_DEVICE_LANGUAGES"] = [["en"]]
@@ -373,7 +387,7 @@ enum AppleIntelligenceDiagnostics {
                 checks.append(AppleIntelligenceDiagnosticCheck(
                     title: "GREYMATTER eligibility",
                     status: .passed,
-                    detail: "Language, region and generative-model inputs are marked as evaluated."
+                    detail: "Language, region and generative-model inputs are marked as evaluated at \(eligibilityTarget.file)."
                 ))
             } catch {
                 session.append("[WARN] eligibilityd write failed: \(error.localizedDescription)")
@@ -387,7 +401,7 @@ enum AppleIntelligenceDiagnostics {
             checks.append(AppleIntelligenceDiagnosticCheck(
                 title: "GREYMATTER eligibility",
                 status: .warning,
-                detail: "The exploit did not grant access to /var/db/eligibilityd/eligibility.plist."
+                detail: "The exploit could not grant access to either known eligibility plist path."
             ))
         }
 
