@@ -128,7 +128,7 @@ struct AppleIntelligenceView: View {
             } header: {
                 Label("Experimental runtime gate", systemImage: "flask")
             } footer: {
-                Text("Run this after respring. It backs up SiriAvailability, applies the verified 0x37/0x1f SAE dictionary, verifies readback and does not respring. The system daemon may still recompute its own state.")
+                Text("Run this after respring. It backs up SiriAvailability, applies the verified 0x37/0x1f local dictionary and verifies readback. It does not restart assistantd or bypass its sandboxed capability service, so a successful local write is not proof that generation will work.")
             }
 
             Section {

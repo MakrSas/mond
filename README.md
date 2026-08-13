@@ -84,7 +84,7 @@
 
 **Known Issues:**<br>
 &#45; Tweaks require a respring to take effect and may disappear after a full reboot<br>
-&#45; Base iPhone 15 Apple Intelligence spoofing is experimental: use the **Apple Intelligence** one-click diagnostic flow to apply and verify the complete iOS 27 MobileGestalt identity payload, save the diagnostic log in `Documents/mond/AppleIntelligenceDiagnostics`, and respring after the write. A 7 GB model download or visible buttons do not prove that the downstream Siri generation gate is enabled; full on-device features are not guaranteed on A16 hardware.<br>
+&#45; Base iPhone 15 Apple Intelligence spoofing is experimental: use the **Apple Intelligence** one-click diagnostic flow to apply and verify the complete iOS 27 MobileGestalt identity payload, save the diagnostic log in `Documents/mond/AppleIntelligenceDiagnostics`, and respring after the write. A 7 GB model download or visible buttons do not prove that the downstream Siri generation gate is enabled; on iOS 27 beta 4 the authoritative `assistantd`/capability-service gate may still reject the physical A16 device, and full on-device features are not guaranteed.<br>
 &#45; In diagnostics, `-254` means the probed path was not present when the legacy existence check ran, while `-3` means containermanager rejected the requested path as outside the app's sandbox. Neither result proves that GREYMATTER or the downloaded model is broken.<br>
 &#45; Disable Region restrictions may be broken on some versions/devices<br>
 &#45; iPadOS UI and related tweaks may not work and/or **bootloop** you!<br>

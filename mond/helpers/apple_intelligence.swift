@@ -585,7 +585,7 @@ enum AppleIntelligenceDiagnostics {
                     session: session,
                     checks: [writeCheck, runtimeCheck],
                     summary: readbackOK
-                        ? "SiriAvailability применён. Сразу проверьте Writing Tools/Image Playground, затем сохраните runtime snapshot."
+                        ? "Локальная SiriAvailability изменена и сохранена. Это не перезапускает assistantd и не подтверждает генерацию; сразу проверьте Writing Tools/Image Playground, затем сохраните runtime snapshot."
                         : "SiriAvailability не прошёл readback-проверку."
                 )
             } catch {
@@ -623,6 +623,7 @@ enum AppleIntelligenceDiagnostics {
             session.append("[RUNTIME] \(line)")
         }
         recordFoundationModelAvailability(session: session)
+        recordSystemAssistantAppPresence(session: session)
         let saeEnabled = runtime.contains("runtime.SAE=1")
         let availabilityHasSAE = runtime.contains("availability.saeCapabilities=55") || runtime.contains("availability.saeCapabilities=0x37")
         let liveAvailabilityLine = runtime
@@ -632,6 +633,7 @@ enum AppleIntelligenceDiagnostics {
         let externalServiceDisabled = runtime.contains("external.AF.service.SAE=0")
         let asyncSAETransportError = runtime.contains("external.AF.async.SAE.sent=1 callback=1 timeout=0 value=0 errorPresent=1")
         let asyncSAEAuthoritativeFalse = runtime.contains("external.AF.async.SAE.sent=1 callback=1 timeout=0 value=0 errorPresent=0")
+        let asyncSAEAuthoritativeTrue = runtime.contains("external.AF.async.SAE.sent=1 callback=1 timeout=0 value=1 errorPresent=0")
         let asyncSAECompleted = runtime.contains("external.AF.async.SAE.sent=1 callback=1 timeout=0")
         if externalServiceDisabled {
             session.append("[WARN] The external Siri capability service still reports SAE disabled; local SiriAvailability is not enough to enable Writing Tools.")
@@ -647,19 +649,41 @@ enum AppleIntelligenceDiagnostics {
             session.append("[WARN] Live AFSiriAvailability still reports missing SAE capability bits: \(liveAvailabilityLine)")
         }
         let localRuntimePass = saeEnabled && availabilityHasSAE && liveAvailabilityHasSAE
-        let downstreamPass = !asyncSAEAuthoritativeFalse
+        // A transport error is not a positive capability response. Treat only
+        // an explicit value=1/errorPresent=0 as a downstream pass; otherwise a
+        // local 0x37 preference patch could be mistaken for working generation.
+        let downstreamPass = asyncSAEAuthoritativeTrue
         return AppleIntelligenceDiagnosticCheck(
             title: "Siri generation gate",
             status: localRuntimePass && downstreamPass ? .passed : .warning,
             detail: localRuntimePass
                 ? (asyncSAETransportError
-                    ? "Local SAE is enabled; the external probe reached a transport error, so its false result is not authoritative."
+                    ? "Local SAE is enabled, but the external capability service rejected the app connection (sandbox/Mach lookup). Generation is not confirmed."
                     : asyncSAEAuthoritativeFalse
                         ? "Local SAE is enabled, but the external capability service authoritatively denied SAE."
-                        : "Local SAE is enabled; downstream service response was not a clean positive response.")
+                        : "Local SAE is enabled; the downstream service did not return an explicit positive response.")
                 : liveAvailabilityLine.map { "Live AFSiriAvailability reports missing capability bits: \($0)" }
                     ?? "UI/assets may be present, but the live Siri availability object or local SAE capability is still unavailable."
         )
+    }
+
+    private static func recordSystemAssistantAppPresence(session: AppleIntelligenceLogSession) {
+        // assistantd has a separate SiriApp/CampoInstalled input on iOS 27.
+        // The app sandbox cannot turn a false result into a reliable absence
+        // proof, so these are deliberately labelled as visibility probes.
+        let candidates = [
+            "/private/var/staged_system_apps/SiriApp.app",
+            "/Applications/SiriApp.app",
+            "/Applications/Campo.app"
+        ]
+        for path in candidates {
+            let visible = FileManager.default.fileExists(atPath: path)
+            let key = path
+                .replacingOccurrences(of: "/", with: "_")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+            session.append("[RUNTIME] systemApp.visibility.\(key)=\(visible ? 1 : 0)")
+        }
+        session.append("[INFO] System-app visibility probes are inconclusive when sandboxed; 0 means not visible to mond, not definitively absent.")
     }
 
     private static func recordFoundationModelAvailability(session: AppleIntelligenceLogSession) {
