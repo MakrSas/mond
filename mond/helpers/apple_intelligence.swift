@@ -458,6 +458,28 @@ enum AppleIntelligenceDiagnostics {
             ))
         }
 
+        if let cString = apple_intelligence_refresh_availability() {
+            let refreshResult = String(cString: cString)
+            free(cString)
+            for line in refreshResult.split(separator: "\n") {
+                session.append("[GMS] \(line)")
+            }
+            let refreshCompleted = refreshResult.contains("availability.update.sent=1 callback=1 timeout=0")
+            checks.append(AppleIntelligenceDiagnosticCheck(
+                title: "GenerativeModels availability refresh",
+                status: refreshCompleted ? .passed : .warning,
+                detail: refreshCompleted
+                    ? "GMAvailabilityWrapper completed its availability refresh."
+                    : "GMAvailabilityWrapper refresh did not complete synchronously; inspect the saved log."
+            ))
+        } else {
+            checks.append(AppleIntelligenceDiagnosticCheck(
+                title: "GenerativeModels availability refresh",
+                status: .warning,
+                detail: "The availability refresh returned no diagnostic data."
+            ))
+        }
+
         checks.append(recordRuntimeProbe(session: session))
 
         let regionLooksCompatible = regionCode == "US" && regionInfo == "LL/A"
@@ -547,6 +569,13 @@ enum AppleIntelligenceDiagnostics {
                     status: readbackOK ? .passed : .warning,
                     detail: readbackOK ? "The patched capability dictionary was read back unchanged." : "The write did not verify with readbackEqual=1."
                 )
+                if let refreshCString = apple_intelligence_refresh_availability() {
+                    let refreshResult = String(cString: refreshCString)
+                    free(refreshCString)
+                    for line in refreshResult.split(separator: "\n") {
+                        session.append("[GMS] \(line)")
+                    }
+                }
                 let runtimeCheck = recordRuntimeProbe(session: session)
                 result = finish(
                     session: session,
