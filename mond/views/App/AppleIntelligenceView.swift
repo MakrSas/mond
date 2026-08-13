@@ -34,7 +34,7 @@ struct AppleIntelligenceView: View {
             } header: {
                 Label("One-click flow", systemImage: "wand.and.stars")
             } footer: {
-                Text("The flow checks access, MobileGestalt, Siri feature flags and GREYMATTER eligibility, creates backups, applies the supported spoof payload, verifies the result, saves the logs in Documents/mond and resprings SpringBoard. The model download still requires system interaction.")
+                Text("The flow checks access, applies the complete iOS 27 identity payload, probes Siri's effective generation gate and GREYMATTER, creates backups, verifies the result, saves the log in Documents/mond before respringing SpringBoard. The model download still requires system interaction.")
             }
 
             if let result {
@@ -102,7 +102,7 @@ struct AppleIntelligenceView: View {
             }
 
             Section {
-                Text("On a base iPhone 15, this can make the eligibility and download flow visible, but Apple officially supports Apple Intelligence only on iPhone 15 Pro models and iPhone 16 or later. Full on-device features may still be blocked by hardware or server attestation.")
+                Text("On a base iPhone 15, this can make eligibility, the model download and parts of the UI visible, but Apple officially supports Apple Intelligence only on iPhone 15 Pro models and iPhone 16 or later. The diagnostic now records the downstream Siri gate; full generation may still be blocked by the system daemon or hardware policy.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } header: {

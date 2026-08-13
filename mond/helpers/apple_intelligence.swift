@@ -151,6 +151,33 @@ enum AppLogStore {
 enum AppleIntelligenceDiagnostics {
     private static let aiKey = "A62OafQ85EJAiiqKn4agtg"
     private static let productTypeKey = "h9jDsbgj7xIVeIQ8S3/X3Q"
+    private static let hardwareModelKey = "oYicEKzVTz4/CxxE05pEgQ"
+    private static let cpuChipKey = "5pYKlGnYYBzGvAlIU8RjEQ"
+
+    // iOS 27 consumers read more than the classic ProductType answer. Keep
+    // the identity internally consistent so eligibility and Siri do not see
+    // an iPhone 16 ProductType next to iPhone 15 component mirrors.
+    private static let productTypeMirrorKeys = [
+        "+1TeoctsaQC55zwHZ6MESg", // ProductTypeDescForAudio
+        "0+nc/Udy4WNG8S+Q7a/s1A", // ThinningProductType
+        "G91h5IuJvXISeyngNFqEpg", // ProductTypeDescForUserVisibility
+        "GEsznZwAYGOa1a67QU1Uew", // ProductTypeDescForPowerPerf
+        "GqAdWRLnC7oYQrNYF48VYA", // SubProductType
+        "MKE8hwsOxxRCtwBk2aDBZA", // ProductTypeDescForAutomatedTesting
+        "myx96YOqBSDzLwljSYWBiQ", // ProductTypeDescForCamera
+        "xNN67KktpWp7syTT3S1BFA"  // ProductTypeDescForAnalytics
+    ]
+
+    private static let hardwareModelMirrorKeys = [
+        "/YYygAofPDbhrwToVsXdeA", // HWModelStr
+        "GGIIDN/ANr8X2WrgS6nBYQ", // HWModelUniqueStr
+        "ZGraRMW0TsxCvONeeJ5C2w", // HWModelDescriptionForUserVisibility
+        "b4e7mEbjqfewD6oXmo9U5g", // HWModelDescriptionForPowerPerf
+        "dW5fpt/6HhaTbnK/UqL6cA", // HWModelDescriptionForAudio
+        "oQNDePXjSD1z7W0ddqt9tg", // HWModelDescriptionForAutomatedTesting
+        "uCIk6n9Am5fsV2cTjhqFQw", // HWModelDescriptionForAnalytics
+        "yAfB6E2v0++rHtdW7SDg8w"  // HWModelDescriptionForCamera
+    ]
 
     static func run(completion: @escaping (AppleIntelligenceDiagnosticResult) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
@@ -272,7 +299,9 @@ enum AppleIntelligenceDiagnostics {
 
         let likelyBaseIPhone15 = device == "iPhone15,4" || device == "iPhone15,5"
         let targetProductType = device.hasPrefix("iPad") ? "iPad16,3" : "iPhone16,1"
-        session.append(likelyBaseIPhone15 ? "[INFO] Base iPhone 15 detected; using iPhone15 Pro ProductType for the preparation pass." : "[INFO] Using supported ProductType target: \(targetProductType).")
+        let targetHardwareModel = device.hasPrefix("iPad") ? "J717AP" : "D83AP"
+        let targetCPUChip = "t8130"
+        session.append(likelyBaseIPhone15 ? "[INFO] Base iPhone 15 detected; using iPhone15 Pro identity for the preparation pass." : "[INFO] Using supported ProductType target: \(targetProductType).")
 
         let baselineURL = AppPaths.backupsURLForAppleIntelligence
         do {
@@ -284,6 +313,13 @@ enum AppleIntelligenceDiagnostics {
 
         cacheExtra[aiKey] = 1
         cacheExtra[productTypeKey] = targetProductType
+        cacheExtra[hardwareModelKey] = targetHardwareModel
+        cacheExtra[cpuChipKey] = targetCPUChip
+        if device.hasPrefix("iPhone") {
+            for key in productTypeMirrorKeys { cacheExtra[key] = targetProductType }
+            for key in hardwareModelMirrorKeys { cacheExtra[key] = targetHardwareModel }
+            session.append("[INFO] Applying iOS 27 identity mirrors: ProductType=\(productTypeMirrorKeys.count), HWModel=\(hardwareModelMirrorKeys.count).")
+        }
         mg["CacheExtra"] = cacheExtra
 
         do {
@@ -294,15 +330,29 @@ enum AppleIntelligenceDiagnostics {
             let verifiedExtra = mutableDictionary(verified["CacheExtra"])
             let verifiedAI = (verifiedExtra[aiKey] as? NSNumber)?.intValue == 1
             let verifiedProduct = verifiedExtra[productTypeKey] as? String ?? "missing"
-            let passed = verifiedAI && verifiedProduct == targetProductType
+            let verifiedHardware = verifiedExtra[hardwareModelKey] as? String ?? "missing"
+            let verifiedCPU = verifiedExtra[cpuChipKey] as? String ?? "missing"
+            let productMirrorsVerified = device.hasPrefix("iPhone") && productTypeMirrorKeys.allSatisfy {
+                (verifiedExtra[$0] as? String) == targetProductType
+            }
+            let hardwareMirrorsVerified = device.hasPrefix("iPhone") && hardwareModelMirrorKeys.allSatisfy {
+                (verifiedExtra[$0] as? String) == targetHardwareModel
+            }
+            let identityVerified = !device.hasPrefix("iPhone") || (productMirrorsVerified && hardwareMirrorsVerified)
+            let passed = verifiedAI && verifiedProduct == targetProductType && verifiedHardware == targetHardwareModel && verifiedCPU == targetCPUChip && identityVerified
 
             session.append(passed ? "[OK] MobileGestalt mutation verified." : "[FAIL] MobileGestalt mutation did not verify after writing.")
             session.append("Verified ProductType: \(verifiedProduct)")
+            session.append("Verified HardwareModel: \(verifiedHardware)")
+            session.append("Verified CPUChip: \(verifiedCPU)")
+            if device.hasPrefix("iPhone") {
+                session.append("Verified identity mirrors: ProductType=\(productMirrorsVerified), HWModel=\(hardwareMirrorsVerified)")
+            }
             session.append("Verified AI flag: \(verifiedAI)")
             checks.append(AppleIntelligenceDiagnosticCheck(
                 title: "MobileGestalt preparation",
                 status: passed ? .passed : .failed,
-                detail: "ProductType=\(verifiedProduct), AI flag=\(verifiedAI)"
+                detail: "ProductType=\(verifiedProduct), HWModel=\(verifiedHardware), CPU=\(verifiedCPU), AI flag=\(verifiedAI), mirrors=\(identityVerified)"
             ))
         } catch {
             session.append("[FAIL] MobileGestalt write failed: \(error.localizedDescription)")
@@ -402,6 +452,33 @@ enum AppleIntelligenceDiagnostics {
                 title: "GREYMATTER eligibility",
                 status: .warning,
                 detail: "The exploit could not grant access to either known eligibility plist path."
+            ))
+        }
+
+        // This is intentionally read-only. It records the state consumed by
+        // the Siri runtime instead of treating visible UI or a 7 GB download
+        // as proof that generation is enabled.
+        if let cString = apple_intelligence_runtime_probe() {
+            let runtime = String(cString: cString)
+            free(cString)
+            for line in runtime.split(separator: "\n") {
+                session.append("[RUNTIME] \(line)")
+            }
+            let saeEnabled = runtime.contains("runtime.SAE=1")
+            let availabilityHasSAE = runtime.contains("availability.saeCapabilities=55") || runtime.contains("availability.saeCapabilities=0x37")
+            checks.append(AppleIntelligenceDiagnosticCheck(
+                title: "Siri generation gate",
+                status: saeEnabled && availabilityHasSAE ? .passed : .warning,
+                detail: saeEnabled && availabilityHasSAE
+                    ? "The local Siri runtime reports SAE enabled."
+                    : "UI/assets may be present, but the local Siri runtime still reports the SAE gate or capability word as disabled."
+            ))
+        } else {
+            session.append("[WARN] Siri runtime probe returned no data.")
+            checks.append(AppleIntelligenceDiagnosticCheck(
+                title: "Siri generation gate",
+                status: .warning,
+                detail: "The read-only AssistantServices probe returned no data."
             ))
         }
 
